@@ -11,6 +11,8 @@ export interface MarketSnapshot {
   as_of: string;
   last: number;
   previous_close: number | null;
+  /** set when the last session on file before today is too old to compare with (missing data) */
+  previous_gap: { last_day_on_file: string } | null;
   change: number | null;
   change_pct: number | null;
   session: {
@@ -83,7 +85,8 @@ let dailyCache: { at: number; symbol: string; rows: Daily[] } | null = null;
 let snapCache: { at: number; snap: MarketSnapshot } | null = null;
 
 async function dailyRows(symbol: string): Promise<Daily[]> {
-  if (dailyCache && dailyCache.symbol === symbol && Date.now() - dailyCache.at < 3600_000) return dailyCache.rows;
+  // 10 minutes: short enough that a refilled gap shows up soon, long enough to keep the view cheap
+  if (dailyCache && dailyCache.symbol === symbol && Date.now() - dailyCache.at < 600_000) return dailyCache.rows;
   const rows = await sbGet<Daily>(
     `rth_daily?select=day,open,high,low,close,volume,bars&symbol=eq.${encodeURIComponent(symbol)}&order=day.desc&limit=260`,
     30000,
@@ -156,7 +159,10 @@ export async function getSnapshot(): Promise<MarketSnapshot | null> {
   const orBars = rth.filter((b) => Date.parse(b.ts) < etToUtc(sessionDay, 9, 45));
   const orDone = rth.some((b) => etParts(Date.parse(b.ts)).minutes >= OR_END);
 
-  const prev = daily.find((d) => d.day < sessionDay) ?? null;
+  const prevOnFile = daily.find((d) => d.day < sessionDay) ?? null;
+  // A weekend or a holiday weekend is at most 4 calendar days; anything longer means bars are missing.
+  const gapDays = prevOnFile ? (Date.parse(sessionDay) - Date.parse(prevOnFile.day)) / 86400_000 : 0;
+  const prev = prevOnFile && gapDays <= 4 ? prevOnFile : null;
   const sessionDone = lastMs >= sessionClose - 60_000;
   // Closes used for the long average: finished regular sessions only.
   const finished = daily.filter((d) => d.day < sessionDay || (d.day === sessionDay && sessionDone));
@@ -175,6 +181,7 @@ export async function getSnapshot(): Promise<MarketSnapshot | null> {
     as_of: new Date(lastMs + 60_000).toISOString(),
     last,
     previous_close: prev ? prev.close : null,
+    previous_gap: prevOnFile && !prev ? { last_day_on_file: prevOnFile.day } : null,
     change: prev ? r2(last - prev.close) : null,
     change_pct: prev ? r2(((last - prev.close) / prev.close) * 100) : null,
     session: {
