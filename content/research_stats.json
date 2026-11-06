@@ -1,0 +1,41 @@
+{
+  "updated": "2026-11-05",
+  "note": "Measured on past data. Past behaviour does not mean it will repeat. Costs assume $3.74 per MES round trip (commission plus one tick of slippage each side).",
+  "items": [
+    {
+      "title": "Overnight vs daytime (S&P 500, since 1993)",
+      "value": "+7.7% a year overnight vs -2.0% a year in the daytime",
+      "detail": "Holding SPY only from the close to the next open earned about 7.7% a year after costs; holding only from the open to the close lost about 2.0% a year. Buy-and-hold earned about 11.4% a year.",
+      "sample": "SPY daily prices",
+      "period": "1993-2026"
+    },
+    {
+      "title": "Overnight with the 200-day filter",
+      "value": "+7.3% a year, worst fall -14%",
+      "detail": "Holding overnight only when the close is above its 200-day average gave up a little return but cut the worst peak-to-trough fall to about 14%. This is the rule the system is now testing on a simulation account.",
+      "sample": "SPY daily prices",
+      "period": "1993-2026"
+    },
+    {
+      "title": "MES overnight vs daytime, last two years",
+      "value": "+1.32 and +3.60 points a night; daytime +1.65 and -0.39",
+      "detail": "Average MES move from the 16:00 ET close to the 09:30 ET open, up on 57% of nights in both years, compared with the average move from the open to the close.",
+      "sample": "MES 1-minute bars",
+      "period": "Oct 2024-Oct 2025 and Oct 2025-Oct 2026"
+    },
+    {
+      "title": "Opening-range breaks often fail",
+      "value": "78% back inside within 15 minutes",
+      "detail": "The first time price broke out of the 09:30-09:45 ET range, it was back inside that range within 15 minutes on 78% of days.",
+      "sample": "248 days",
+      "period": "MES, Oct 2025-Oct 2026"
+    },
+    {
+      "title": "The system's earlier daytime setups",
+      "value": "6 of 6 lost money after costs",
+      "detail": "Replayed over a year of 1-minute data, all six daytime setups the system started with were negative after costs (for example MESRunner lost $3.97 a trade over 161 trades). They are not being used.",
+      "sample": "Bot strategy replay",
+      "period": "Oct 2024-Oct 2025"
+    }
+  ]
+}
