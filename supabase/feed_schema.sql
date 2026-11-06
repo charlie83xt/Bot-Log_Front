@@ -34,3 +34,30 @@ where (ts at time zone 'America/New_York')::time >= time '09:30'
   and (ts at time zone 'America/New_York')::time <  time '16:00'
   and extract(isodow from (ts at time zone 'America/New_York')) < 6
 group by 1, 2;
+
+-- 3) Marketing drafts and what was posted (step 2). Only the dashboard server reads or writes.
+create table if not exists marketing_posts (
+  id          bigserial primary key,
+  key         text not null unique,                 -- e.g. recap:2026-11-06 (one draft per subject)
+  kind        text not null,                        -- recap | overnight | fact | manual
+  text        text not null,
+  alt_text    text,                                 -- optional AI rewording, already checked
+  status      text not null default 'draft',        -- draft | posted | rejected | failed
+  channel     text not null default 'x',
+  post_id     text,
+  error       text,
+  created_at  timestamptz not null default now(),
+  posted_at   timestamptz
+);
+alter table marketing_posts enable row level security;
+
+-- 4) Page visits, counted per day and source. No cookies, no IP addresses, no personal data.
+create table if not exists page_visits (
+  id          bigserial primary key,
+  day         date not null,
+  ref         text not null,
+  hits        integer not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists idx_page_visits_day on page_visits (day desc);
+alter table page_visits enable row level security;

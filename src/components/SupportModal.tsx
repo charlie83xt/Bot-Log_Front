@@ -24,10 +24,23 @@ export function SupportModal({ info, onClose }: { info: SupportInfo; onClose: ()
           This page is free and has no ads. Donations help pay for the data and hosting. They buy nothing: no signals, no advice, no access.
         </p>
         {info.paypal && (
-          <a href={info.paypal} target="_blank" rel="noopener noreferrer"
-            className="mt-4 flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400">
-            Donate with PayPal <ExternalLink size={14} />
-          </a>
+          <div className="mt-4">
+            {info.paypal_amounts.length > 0 && (
+              <div className="mb-2 grid grid-cols-3 gap-2">
+                {info.paypal_amounts.map((a) => (
+                  <a key={a.url} href={a.url} target="_blank" rel="noopener noreferrer"
+                    className="rounded-lg border border-amber-500/40 py-2 text-center font-mono text-sm text-amber-300 hover:bg-amber-500/10">
+                    {a.label}
+                  </a>
+                ))}
+              </div>
+            )}
+            <a href={info.paypal} target="_blank" rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400">
+              {info.paypal_amounts.length > 0 ? 'Other amount on PayPal' : 'Donate with PayPal'} <ExternalLink size={14} />
+            </a>
+            <p className="mt-1.5 text-center text-[11px] text-slate-500">paypal.me/{info.paypal_handle}</p>
+          </div>
         )}
         {info.crypto.length > 0 && (
           <ul className="mt-4 space-y-2">

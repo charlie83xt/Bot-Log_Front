@@ -21,6 +21,7 @@ export interface MarketSnapshot {
     day: string;
     status: 'open' | 'closed';
     open: number;
+    close: number | null;
     high: number;
     low: number;
     vwap: number | null;
@@ -38,6 +39,9 @@ export interface ResearchStats {
 }
 
 export interface SupportInfo {
+  x_handle: string | null;
   paypal: string | null;
+  paypal_handle: string | null;
+  paypal_amounts: { label: string; url: string }[];
   crypto: { coin: string; address: string }[];
 }

@@ -5,6 +5,8 @@
 //   GET  /api/market   delayed market snapshot from ES-Collector's Supabase bars
 //   GET  /api/stats    fixed research facts (content/research_stats.json)
 //   GET  /api/support  donation details from settings
+//   GET  /rss.xml      public events as an RSS feed
+//   GET  /admin        private: marketing drafts, posting to X, visitor counts (needs ADMIN_TOKEN)
 import express from 'express';
 import type { Request, Response } from 'express';
 import dotenv from 'dotenv';
@@ -16,6 +18,10 @@ import { validateEvent } from './server/events.ts';
 import { narrate } from './server/narrate.ts';
 import { eventExists, insertEvent, latestPublic, storageKind, type FeedRow } from './server/store.ts';
 import { getSnapshot, marketConfigured } from './server/market.ts';
+import { siteUrl, supportInfo } from './server/site.ts';
+import { countVisit } from './server/visits.ts';
+import { mountAdmin } from './server/admin.ts';
+import { startAgent } from './server/marketing.ts';
 
 dotenv.config();
 
@@ -32,6 +38,8 @@ app.use((_req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   next();
 });
+
+app.use(countVisit);
 
 // ---------- small per-IP rate limiter ----------
 function rateLimit(perMinute: number) {
@@ -203,26 +211,50 @@ app.get('/api/stats', (_req, res) => {
 });
 
 app.get('/api/support', (_req, res) => {
-  const env = (k: string) => process.env[k]?.trim() || '';
-  const paypal = env('SUPPORT_PAYPAL_ME').replace(/^https?:\/\/(www\.)?paypal\.me\//i, '').replace(/\/+$/, '');
-  const wallets: { coin: string; address: string }[] = [];
-  const check: [string, string, RegExp][] = [
-    ['BTC', 'SUPPORT_BTC', /^(bc1[a-z0-9]{20,90}|[13][A-HJ-NP-Za-km-z1-9]{25,34})$/],
-    ['ETH', 'SUPPORT_ETH', /^0x[0-9a-fA-F]{40}$/],
-    ['SOL', 'SUPPORT_SOL', /^[1-9A-HJ-NP-Za-km-z]{32,44}$/],
-  ];
-  for (const [coin, key, re] of check) {
-    const a = env(key);
-    if (a && re.test(a)) wallets.push({ coin, address: a });
-  }
   res.setHeader('Cache-Control', 'public, max-age=600');
-  res.json({
-    paypal: /^[A-Za-z0-9_.-]{2,40}$/.test(paypal) ? `https://paypal.me/${paypal}` : null,
-    crypto: wallets,
-  });
+  res.json(supportInfo());
 });
 
+mountAdmin(app);
 app.use('/api', (_req, res) => void res.status(404).json({ error: 'not found' }));
+
+// ---------- RSS and robots ----------
+const xmlEsc = (s: string) => s.replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]!);
+const FEED_TITLES: Record<string, string> = {
+  overnight: 'Overnight rule', signal: 'Signal', trade_open: 'Position opened', trade_close: 'Position closed', bot_status: 'System',
+};
+app.get('/rss.xml', rateLimit(30), async (_req, res) => {
+  try {
+    const base = siteUrl();
+    const rows = await latestPublic(30);
+    const items = rows.map((r) => `<item><title>${xmlEsc(`${FEED_TITLES[r.type] ?? r.type}: ${r.narration.slice(0, 80)}`)}</title>` +
+      `<description>${xmlEsc(r.narration)}</description>` +
+      (base ? `<link>${xmlEsc(`${base}/?ref=rss`)}</link>` : '') +
+      `<guid isPermaLink="false">${r.event_id}</guid><pubDate>${new Date(r.public_at).toUTCString()}</pubDate></item>`).join('');
+    res.type('application/rss+xml').setHeader('Cache-Control', 'public, max-age=300');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>S&amp;P Futures Bot Log</title>` +
+      `<link>${xmlEsc(base || 'https://example.invalid')}</link><description>What one automated S&amp;P 500 futures system did, in plain English. Delayed. Not advice.</description>` +
+      `${items}</channel></rss>`);
+  } catch {
+    res.status(502).send('feed unavailable');
+  }
+});
+app.get('/robots.txt', (_req, res) => {
+  const base = siteUrl();
+  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ''}`);
+});
+app.get('/sitemap.xml', (_req, res) => {
+  const base = siteUrl();
+  if (!base) return void res.status(404).end();
+  res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${xmlEsc(base)}/</loc><changefreq>hourly</changefreq></url></urlset>`);
+});
+
+// index.html with the real site address filled in, so link previews on X show the card image.
+function renderIndex(html: string): string {
+  const base = siteUrl();
+  return html.replaceAll('%SITE_URL%', base);
+}
+
 
 // ---------- the page itself ----------
 async function startServer() {
@@ -231,9 +263,11 @@ async function startServer() {
     const vite = await createServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req, res) => res.sendFile(path.resolve(__dirname, 'dist', 'index.html')));
+    const indexHtml = renderIndex(fs.readFileSync(path.resolve(__dirname, 'dist', 'index.html'), 'utf8'));
+    app.use(express.static(path.resolve(__dirname, 'dist'), { index: false }));
+    app.get('*', (_req, res) => void res.type('html').send(indexHtml));
   }
+  startAgent();
   app.listen(port, () => {
     console.log(`Server listening on port ${port} (storage: ${storageKind()}, market: ${marketConfigured() ? 'on' : 'off'})`);
   });

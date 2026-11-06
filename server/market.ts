@@ -17,6 +17,8 @@ export interface MarketSnapshot {
     day: string;
     status: 'open' | 'closed';
     open: number;
+    /** last regular-session price, once the session has finished */
+    close: number | null;
     high: number;
     low: number;
     vwap: number | null;
@@ -159,6 +161,7 @@ export async function getSnapshot(): Promise<MarketSnapshot | null> {
       day: sessionDay,
       status: sessionDone || lastMs < sessionOpen ? 'closed' : 'open',
       open: rth[0].open,
+      close: sessionDone ? rth[rth.length - 1].close : null,
       high: Math.max(...rth.map((b) => b.high)),
       low: Math.min(...rth.map((b) => b.low)),
       vwap: vol > 0 ? r2(pv / vol) : null,
