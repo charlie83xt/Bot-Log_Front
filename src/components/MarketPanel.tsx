@@ -49,6 +49,12 @@ export function MarketPanel({ m, error }: { m: MarketSnapshot | null; error: str
         </span>
       </div>
 
+      {m.stale && (
+        <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+          The price feed stopped updating on {etDateTime(m.as_of)}. Everything in this panel is from that time, not today.
+        </div>
+      )}
+
       <div className="mt-4">
         <PriceChart m={m} />
       </div>

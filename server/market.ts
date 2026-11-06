@@ -27,6 +27,8 @@ export interface MarketSnapshot {
   previous: { day: string; high: number; low: number; close: number } | null;
   average: { days: number; value: number | null; days_available: number; price_above: boolean | null };
   chart: { t: string; c: number }[];
+  /** true when the newest bar is older than it should be (the collector has stopped) */
+  stale: boolean;
 }
 
 // ---------- New York time helpers ----------
@@ -54,6 +56,24 @@ export function etToUtc(day: string, hh: number, mm: number): number {
   let guess = wall;
   for (let i = 0; i < 2; i++) guess = wall - (etParts(guess).wallAsUtc - guess);
   return guess;
+}
+
+/** CME Globex for ES/MES trades Sunday 18:00 to Friday 17:00 New York time, with a 17:00-18:00 pause each day. */
+export function globexOpen(ms: number): boolean {
+  const p = etParts(ms);
+  const m = p.minutes;
+  if (p.weekday === 'Sat') return false;
+  if (p.weekday === 'Sun') return m >= 18 * 60;
+  if (p.weekday === 'Fri') return m < 17 * 60;
+  return m < 17 * 60 || m >= 18 * 60;
+}
+
+/** Stale if the market has been open for 30+ minutes since the newest bar, or the bar is 4+ days old. */
+export function isStale(lastBarMs: number, cutoffMs: number): boolean {
+  if (cutoffMs - lastBarMs > 4 * 86400_000) return true;
+  let openMinutes = 0;
+  for (let t = lastBarMs + 60_000; t <= cutoffMs; t += 60_000) if (globexOpen(t) && ++openMinutes >= 30) return true;
+  return false;
 }
 
 const OPEN = 9 * 60 + 30, CLOSE = 16 * 60, OR_END = 9 * 60 + 45;
@@ -172,6 +192,7 @@ export async function getSnapshot(): Promise<MarketSnapshot | null> {
     previous: prev ? { day: prev.day, high: prev.high, low: prev.low, close: prev.close } : null,
     average: { days: avgDays, value: avg, days_available: closes.length, price_above: avg === null ? null : last > avg },
     chart,
+    stale: isStale(lastMs, cutoff),
   };
   snapCache = { at: Date.now(), snap };
   return snap;

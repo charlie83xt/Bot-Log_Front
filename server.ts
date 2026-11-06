@@ -123,7 +123,7 @@ const publicRow = (r: FeedRow) => ({
 app.get('/api/health', rateLimit(20), async (req, res) => {
   const out: Record<string, unknown> = {
     ok: true,
-    version: 3,
+    version: 4,
     storage: storageKind(),
     market: marketConfigured(),
     narration: process.env.NARRATE_WITH_LLM === '1' && process.env.GEMINI_API_KEY ? 'llm' : 'template',
@@ -142,6 +142,12 @@ app.get('/api/health', rateLimit(20), async (req, res) => {
       }
     }
     out.tables = tables;
+    try {
+      const snap = await getSnapshot();
+      out.market_data = snap ? { last_bar: snap.as_of, stale: snap.stale, symbol: snap.symbol } : 'no bars';
+    } catch (err) {
+      out.market_data = (err as Error).message.replace(/https?:\/\/\S+/g, '').slice(0, 160);
+    }
   }
   res.setHeader('Cache-Control', 'no-store');
   res.json(out);

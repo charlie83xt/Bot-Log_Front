@@ -30,6 +30,7 @@ export interface MarketSnapshot {
   previous: { day: string; high: number; low: number; close: number } | null;
   average: { days: number; value: number | null; days_available: number; price_above: boolean | null };
   chart: { t: string; c: number }[];
+  stale: boolean;
 }
 
 export interface ResearchStats {
