@@ -1,6 +1,6 @@
 {
-  "name": "Aequitas Futures Volatility & Mean Reversion Terminal",
-  "description": "Institutional trading analytics terminal transforming S&P 500 (ES/MES) mean reversion bot logs and VIX volatility filters into real-time market context, risk audits, and actionable trade helpers.",
+  "name": "S&P Futures Bot Log",
+  "description": "A plain-English, delayed log of what one automated S&P 500 futures (ES/MES) system did, with market levels and research findings. Information only, not advice.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
