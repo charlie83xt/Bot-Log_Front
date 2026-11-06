@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Heart } from 'lucide-react';
+import { Heart, Share2 } from 'lucide-react';
 import { useFeed } from './hooks/useFeed';
 import { useJson } from './hooks/useJson';
 import type { MarketSnapshot, ResearchStats, SupportInfo } from './types/feed';
@@ -24,12 +24,26 @@ export default function App() {
             <h1 className="text-base font-semibold text-white">S&amp;P Futures Bot Log</h1>
             <p className="text-xs text-slate-500">One automated system's view of the ES/MES market, in plain English</p>
           </div>
+          <div className="flex items-center gap-2">
+          <a
+            href={`https://twitter.com/intent/tweet?text=${encodeURIComponent('A plain-English, delayed log of what one automated S&P 500 futures system does, with the research behind it:')}&url=${encodeURIComponent(`${window.location.origin}/?ref=share`)}`}
+            target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-sky-500/50 hover:text-sky-300">
+            <Share2 size={13} /> Share
+          </a>
+          {support.data?.x_handle && (
+            <a href={`https://x.com/${support.data.x_handle}`} target="_blank" rel="noopener noreferrer"
+              className="hidden rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:text-white sm:block">
+              Follow @{support.data.x_handle}
+            </a>
+          )}
           {canSupport && (
             <button onClick={() => setShowSupport(true)}
               className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-amber-500/50 hover:text-amber-300">
               <Heart size={13} /> Support
             </button>
           )}
+          </div>
         </div>
       </header>
 

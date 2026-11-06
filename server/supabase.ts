@@ -46,3 +46,27 @@ export async function sbInsertIgnore(table: string, row: object, conflictColumn:
   const rows = (await r.json()) as unknown[];
   return rows.length > 0;
 }
+
+/** Inserts rows; returns the inserted rows. */
+export async function sbInsert<T>(table: string, rows: object | object[]): Promise<T[]> {
+  const r = await fetch(url(table), {
+    method: 'POST',
+    headers: headers({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+    body: JSON.stringify(rows),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!r.ok) throw new Error(`supabase POST ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return (await r.json()) as T[];
+}
+
+/** Updates rows matching the filter (e.g. "id=eq.5"); returns the updated rows. */
+export async function sbPatch<T>(table: string, filter: string, patch: object): Promise<T[]> {
+  const r = await fetch(url(`${table}?${filter}`), {
+    method: 'PATCH',
+    headers: headers({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+    body: JSON.stringify(patch),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!r.ok) throw new Error(`supabase PATCH ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return (await r.json()) as T[];
+}

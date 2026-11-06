@@ -82,11 +82,11 @@ export function templateNarration(e: FeedEvent): string {
   }
 }
 
-const FORBIDDEN = [
+export const FORBIDDEN = [
   'should', 'recommend', 'advice', 'advise', 'guarantee', 'buy now', 'sell now', 'opportunity', 'will rise',
   'will fall', 'will go', 'expect', 'predict', 'forecast', 'profit', 'easy money', 'risk-free', 'you ', 'your ',
 ];
-const numbersIn = (s: string) => (s.match(/\d+(?:\.\d+)?/g) ?? []).map((x) => Number(x));
+export const numbersIn = (s: string) => (s.match(/\d+(?:\.\d+)?/g) ?? []).map((x) => Number(x));
 
 export function acceptRephrase(template: string, candidate: string): boolean {
   const c = candidate.trim();
@@ -127,4 +127,17 @@ export async function narrate(e: FeedEvent): Promise<{ text: string; source: 'te
     console.warn('narration rephrase skipped:', (err as Error).message);
   }
   return { text, source: 'template' };
+}
+
+// Words that turn a public post into advice, a forecast or a promise. Used for every X post.
+const POST_BLOCK = [
+  'should buy', 'should sell', 'you should', 'recommend', 'guarantee', 'buy now', 'sell now', 'will rise', 'will fall',
+  'will go up', 'will go down', 'easy money', 'risk-free', 'risk free', 'get rich', 'passive income', 'sure thing',
+  'signal service', 'copy my trades', 'copy trade', 'dm me',
+];
+
+/** Problems that stop a public post. Empty list = fine. */
+export function publicTextProblems(text: string): string[] {
+  const lower = text.toLowerCase();
+  return POST_BLOCK.filter((w) => lower.includes(w)).map((w) => `contains "${w}"`);
 }
