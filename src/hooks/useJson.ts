@@ -10,7 +10,7 @@ export function useJson<T>(url: string, refreshMs = 0) {
     const load = async () => {
       try {
         const r = await fetch(url);
-        const body = await r.json();
+        const body = await readJson(r);
         if (!alive) return;
         if (!r.ok) throw new Error(body?.error || `HTTP ${r.status}`);
         setData(body as T);
@@ -28,4 +28,14 @@ export function useJson<T>(url: string, refreshMs = 0) {
   }, [url, refreshMs]);
 
   return { data, error };
+}
+
+/** Reads a JSON reply; gives a clear message when the server sent a web page or an error instead. */
+export async function readJson(r: Response): Promise<any> {
+  const text = await r.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(r.ok ? 'the server sent a page instead of data' : `server error ${r.status}`);
+  }
 }

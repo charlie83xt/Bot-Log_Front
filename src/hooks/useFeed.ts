@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FeedItem } from '../types/feed';
+import { readJson } from './useJson';
 
 /** Loads the public feed, then keeps it current through the server's live stream. */
 export function useFeed() {
@@ -19,7 +20,7 @@ export function useFeed() {
 
     fetch('/api/feed?limit=50')
       .then(async (r) => {
-        const body = await r.json();
+        const body = await readJson(r);
         if (!r.ok) throw new Error(body?.error || `HTTP ${r.status}`);
         if (!alive) return;
         setDelay(body.delay_minutes);

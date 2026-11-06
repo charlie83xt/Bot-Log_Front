@@ -10,8 +10,18 @@ function headers(extra: Record<string, string> = {}): Record<string, string> {
   return { apikey: key, Authorization: `Bearer ${key}`, ...extra };
 }
 
+/** Project address only, e.g. https://abcd.supabase.co - any path pasted after it (/rest/v1, /) is ignored. */
+export function supabaseBase(): string {
+  const raw = process.env.SUPABASE_URL!.trim();
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return raw.replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
+  }
+}
+
 function url(pathAndQuery: string): string {
-  return `${process.env.SUPABASE_URL!.trim().replace(/\/+$/, '')}/rest/v1/${pathAndQuery}`;
+  return `${supabaseBase()}/rest/v1/${pathAndQuery}`;
 }
 
 export async function sbGet<T>(pathAndQuery: string, timeoutMs = 15000): Promise<T[]> {

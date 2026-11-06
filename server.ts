@@ -19,6 +19,7 @@ import { narrate } from './server/narrate.ts';
 import { eventExists, insertEvent, latestPublic, storageKind, type FeedRow } from './server/store.ts';
 import { getSnapshot, marketConfigured } from './server/market.ts';
 import { siteUrl, supportInfo } from './server/site.ts';
+import { sbGet } from './server/supabase.ts';
 import { countVisit } from './server/visits.ts';
 import { mountAdmin } from './server/admin.ts';
 import { startAgent } from './server/marketing.ts';
@@ -119,14 +120,31 @@ const publicRow = (r: FeedRow) => ({
   narration_source: r.narration_source,
 });
 
-app.get('/api/health', (_req, res) => {
-  res.json({
+app.get('/api/health', rateLimit(20), async (req, res) => {
+  const out: Record<string, unknown> = {
     ok: true,
+    version: 3,
     storage: storageKind(),
     market: marketConfigured(),
     narration: process.env.NARRATE_WITH_LLM === '1' && process.env.GEMINI_API_KEY ? 'llm' : 'template',
     delay_minutes: delayMin(),
-  });
+    site_url: siteUrl() || null,
+  };
+  // ?deep=1 also checks that each Supabase table can be read (reports errors, never addresses or keys)
+  if (req.query.deep === '1' && marketConfigured()) {
+    const tables: Record<string, string> = {};
+    for (const t of ['feed_events', 'market_bars_1m', 'rth_daily', 'marketing_posts', 'page_visits']) {
+      try {
+        await sbGet(`${t}?select=*&limit=1`);
+        tables[t] = 'ok';
+      } catch (err) {
+        tables[t] = (err as Error).message.replace(/https?:\/\/\S+/g, '').slice(0, 160);
+      }
+    }
+    out.tables = tables;
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(out);
 });
 
 app.get('/api/feed', rateLimit(60), async (req, res) => {
