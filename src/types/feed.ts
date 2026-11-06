@@ -15,6 +15,7 @@ export interface MarketSnapshot {
   as_of: string;
   last: number;
   previous_close: number | null;
+  previous_gap: { last_day_on_file: string } | null;
   change: number | null;
   change_pct: number | null;
   session: {

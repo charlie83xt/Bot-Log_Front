@@ -3,6 +3,9 @@ import type { MarketSnapshot } from '../types/feed';
 import { etDateTime, pts, signed } from '../format';
 import { PriceChart } from './PriceChart';
 
+const dayName = (day: string) =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
@@ -41,13 +44,21 @@ export function MarketPanel({ m, error }: { m: MarketSnapshot | null; error: str
             )}
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            As of {etDateTime(m.as_of)} - delayed {m.delay_minutes} min - change vs previous regular-session close
+            As of {etDateTime(m.as_of)} - delayed {m.delay_minutes} min
+            {m.previous ? ` - change vs the ${dayName(m.previous.day)} regular-session close` : ''}
           </p>
         </div>
         <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${m.session.status === 'open' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-slate-800 text-slate-400'}`}>
           Regular session {m.session.status === 'open' ? 'open' : 'closed'} ({m.session.day})
         </span>
       </div>
+
+      {m.previous_gap && (
+        <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          Price data is missing between {dayName(m.previous_gap.last_day_on_file)} and {dayName(m.session.day)}, so the daily change and
+          the previous day's levels are not shown until the gap is filled.
+        </div>
+      )}
 
       {m.stale && (
         <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
