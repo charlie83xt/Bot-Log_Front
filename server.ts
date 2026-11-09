@@ -28,7 +28,8 @@ dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const port = Number(process.env.PORT) || 3000;
+// AI Studio expects the application to listen on port 3000 (nginx proxy listens on 8080).
+const port = (process.env.PORT && process.env.PORT !== '8080') ? Number(process.env.PORT) : 3000;
 const delayMin = () => Number(process.env.PUBLIC_DELAY_MIN ?? 10) || 10;
 
 app.set('trust proxy', true);
@@ -292,7 +293,7 @@ async function startServer() {
     app.get('*', (_req, res) => void res.type('html').send(indexHtml));
   }
   startAgent();
-  app.listen(port, () => {
+  app.listen(port, '0.0.0.0', () => {
     console.log(`Server listening on port ${port} (storage: ${storageKind()}, market: ${marketConfigured() ? 'on' : 'off'})`);
   });
 }
