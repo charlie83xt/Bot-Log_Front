@@ -28,8 +28,11 @@ dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-// AI Studio expects the application to listen on port 3000 (nginx proxy listens on 8080).
-const port = (process.env.PORT && process.env.PORT !== '8080') ? Number(process.env.PORT) : 3000;
+// In development, AI Studio dev server runs behind an internal proxy on port 3000.
+// In production deployment (Cloud Run), the server must listen on process.env.PORT (defaults to 8080).
+const port = process.env.NODE_ENV === 'production'
+  ? (Number(process.env.PORT) || 8080)
+  : 3000;
 const delayMin = () => Number(process.env.PUBLIC_DELAY_MIN ?? 10) || 10;
 
 app.set('trust proxy', true);
@@ -293,9 +296,20 @@ async function startServer() {
     const vite = await createServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {
-    const indexHtml = renderIndex(fs.readFileSync(path.resolve(__dirname, 'dist', 'index.html'), 'utf8'));
+    const distHtmlPath = path.resolve(__dirname, 'dist', 'index.html');
     app.use(express.static(path.resolve(__dirname, 'dist'), { index: false }));
-    app.get('*', (_req, res) => void res.type('html').send(indexHtml));
+    app.get('*', (_req, res) => {
+      try {
+        if (fs.existsSync(distHtmlPath)) {
+          const indexHtml = renderIndex(fs.readFileSync(distHtmlPath, 'utf8'));
+          res.type('html').send(indexHtml);
+        } else {
+          res.sendFile(path.resolve(__dirname, 'index.html'));
+        }
+      } catch {
+        res.sendFile(path.resolve(__dirname, 'index.html'));
+      }
+    });
   }
   startAgent();
   if (marketConfigured() && !keyCanWrite())
