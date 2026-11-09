@@ -5,9 +5,41 @@ export function supabaseConfigured(): boolean {
   return Boolean(process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_SERVICE_KEY?.trim());
 }
 
+/**
+ * Which kind of key SUPABASE_SERVICE_KEY holds. Only 'service_role' (legacy JWT) and 'secret' (sb_secret_...)
+ * can write; 'anon' / 'publishable' keys can read some tables but every insert is refused by row-level security.
+ */
+export function keyKind(): 'service_role' | 'secret' | 'anon' | 'publishable' | 'unknown' {
+  const key = process.env.SUPABASE_SERVICE_KEY?.trim() || '';
+  if (key.startsWith('sb_secret_')) return 'secret';
+  if (key.startsWith('sb_publishable_')) return 'publishable';
+  const parts = key.split('.');
+  if (parts.length === 3) {
+    try {
+      const role = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')).role;
+      if (role === 'service_role' || role === 'anon') return role;
+    } catch {
+      /* not a JWT */
+    }
+  }
+  return 'unknown';
+}
+
+export const keyCanWrite = () => ['service_role', 'secret'].includes(keyKind());
+
+async function failure(method: string, r: Response): Promise<Error> {
+  const body = (await r.text()).slice(0, 200);
+  if (body.includes('42501') || body.includes('row-level security')) {
+    return new Error(`Supabase refused the write (row-level security). SUPABASE_SERVICE_KEY is a${keyKind() === 'anon' ? 'n anon' : ' ' + keyKind()} key; ` +
+      'it must be the service_role key (Project Settings -> API keys -> Legacy: service_role) or a secret key (sb_secret_...).');
+  }
+  return new Error(`supabase ${method} ${r.status}: ${body}`);
+}
+
 function headers(extra: Record<string, string> = {}): Record<string, string> {
   const key = process.env.SUPABASE_SERVICE_KEY!.trim();
-  return { apikey: key, Authorization: `Bearer ${key}`, ...extra };
+  // New-style keys (sb_secret_/sb_publishable_) go in the apikey header only; legacy JWT keys also as Bearer.
+  return key.startsWith('sb_') ? { apikey: key, ...extra } : { apikey: key, Authorization: `Bearer ${key}`, ...extra };
 }
 
 /** Project address only, e.g. https://abcd.supabase.co - any path pasted after it (/rest/v1, /) is ignored. */
@@ -52,7 +84,7 @@ export async function sbInsertIgnore(table: string, row: object, conflictColumn:
     body: JSON.stringify(row),
     signal: AbortSignal.timeout(15000),
   });
-  if (!r.ok) throw new Error(`supabase POST ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  if (!r.ok) throw await failure('POST', r);
   const rows = (await r.json()) as unknown[];
   return rows.length > 0;
 }
@@ -65,7 +97,7 @@ export async function sbInsert<T>(table: string, rows: object | object[]): Promi
     body: JSON.stringify(rows),
     signal: AbortSignal.timeout(15000),
   });
-  if (!r.ok) throw new Error(`supabase POST ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  if (!r.ok) throw await failure('POST', r);
   return (await r.json()) as T[];
 }
 
@@ -77,6 +109,6 @@ export async function sbPatch<T>(table: string, filter: string, patch: object): 
     body: JSON.stringify(patch),
     signal: AbortSignal.timeout(15000),
   });
-  if (!r.ok) throw new Error(`supabase PATCH ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  if (!r.ok) throw await failure('PATCH', r);
   return (await r.json()) as T[];
 }

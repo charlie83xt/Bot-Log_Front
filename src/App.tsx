@@ -14,15 +14,22 @@ export default function App() {
   const stats = useJson<ResearchStats>('/api/stats');
   const support = useJson<SupportInfo>('/api/support');
   const [showSupport, setShowSupport] = useState(false);
+  const [showLogo, setShowLogo] = useState(true);
   const canSupport = !!support.data && (!!support.data.paypal || support.data.crypto.length > 0);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
       <header className="border-b border-slate-800">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <div>
-            <h1 className="text-base font-semibold text-white">S&amp;P Futures Bot Log</h1>
-            <p className="text-xs text-slate-500">One automated system's view of the ES/MES market, in plain English</p>
+          <div className="flex min-w-0 items-center gap-3">
+            {showLogo && (
+              <img src="/logo.png" alt="" width={40} height={40} onError={() => setShowLogo(false)}
+                className="h-10 w-10 shrink-0 rounded-lg object-cover ring-1 ring-slate-700" />
+            )}
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold text-white">S&amp;P Futures Bot Log</h1>
+              <p className="text-xs text-slate-500">One automated system's view of the ES/MES market, in plain English</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
           <a
