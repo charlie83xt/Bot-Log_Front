@@ -19,7 +19,7 @@ import { narrate } from './server/narrate.ts';
 import { eventExists, insertEvent, latestPublic, storageKind, type FeedRow } from './server/store.ts';
 import { getSnapshot, marketConfigured } from './server/market.ts';
 import { siteUrl, supportInfo } from './server/site.ts';
-import { sbGet } from './server/supabase.ts';
+import { keyCanWrite, keyKind, sbGet } from './server/supabase.ts';
 import { countVisit } from './server/visits.ts';
 import { mountAdmin } from './server/admin.ts';
 import { startAgent } from './server/marketing.ts';
@@ -124,7 +124,7 @@ const publicRow = (r: FeedRow) => ({
 app.get('/api/health', rateLimit(20), async (req, res) => {
   const out: Record<string, unknown> = {
     ok: true,
-    version: 4,
+    version: 5,
     storage: storageKind(),
     market: marketConfigured(),
     narration: process.env.NARRATE_WITH_LLM === '1' && process.env.GEMINI_API_KEY ? 'llm' : 'template',
@@ -143,6 +143,11 @@ app.get('/api/health', rateLimit(20), async (req, res) => {
       }
     }
     out.tables = tables;
+    out.supabase_key = keyKind();
+    if (!keyCanWrite()) {
+      out.ok = false;
+      out.problem = 'SUPABASE_SERVICE_KEY is not the service_role/secret key: bot events, X drafts and visit counts cannot be saved.';
+    }
     try {
       const snap = await getSnapshot();
       out.market_data = snap ? { last_bar: snap.as_of, stale: snap.stale, symbol: snap.symbol } : 'no bars';
@@ -293,6 +298,8 @@ async function startServer() {
     app.get('*', (_req, res) => void res.type('html').send(indexHtml));
   }
   startAgent();
+  if (marketConfigured() && !keyCanWrite())
+    console.warn(`SUPABASE_SERVICE_KEY looks like a ${keyKind()} key: writes will be refused. Use the service_role or secret key.`);
   app.listen(port, '0.0.0.0', () => {
     console.log(`Server listening on port ${port} (storage: ${storageKind()}, market: ${marketConfigured() ? 'on' : 'off'})`);
   });

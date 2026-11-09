@@ -6,7 +6,7 @@ import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { addManualPost, checkPost, editPost, listPosts, publishPost, rejectPost, runAgentOnce, xLength } from './marketing.ts';
 import { visitTotals } from './visits.ts';
-import { xConfigured } from './xclient.ts';
+import { checkX, xConfigured, xKeyHints } from './xclient.ts';
 
 const failures = new Map<string, { n: number; until: number }>();
 
@@ -50,6 +50,7 @@ export function mountAdmin(app: express.Express) {
 
   r.get('/api/admin/state', ...guard, handle(async () => ({
     x_ready: xConfigured(),
+    x_keys: xKeyHints(),
     autopost: process.env.MARKETING_AUTOPOST === '1',
     agent: process.env.MARKETING_ENABLED === '1',
     posts: await listPosts(40),
@@ -61,6 +62,7 @@ export function mountAdmin(app: express.Express) {
   r.post('/api/admin/posts/:id/reject', ...guard, handle(async (req) => rejectPost(id(req))));
   r.post('/api/admin/posts/:id/publish', ...guard, handle(async (req) =>
     publishPost(id(req), Boolean((req.body as { alt?: unknown })?.alt))));
+  r.post('/api/admin/x-check', ...guard, handle(async () => checkX()));
   r.post('/api/admin/run-agent', ...guard, handle(async () => {
     await runAgentOnce();
     return { ok: true };
@@ -94,6 +96,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px
 <div class="row"><input id="pw" type="password" autocomplete="current-password" style="flex:1;min-width:200px;background:#020617;color:#e2e8f0;border:1px solid #334155;border-radius:7px;padding:7px">
 <button class="go" type="submit">Log in</button><span id="loginmsg" class="err"></span></div></form>
 <div id="app" style="display:none"><div id="status" class="meta"></div>
+<div class="row"><button id="xcheck">Check X connection (posts nothing)</button><span id="xres" class="meta"></span></div>
 <h2>Write a post</h2><div class="card"><textarea id="new" placeholder="Your own post (280 characters; links count as 23)"></textarea>
 <div class="row"><button class="go" id="add">Save as draft</button><span id="newinfo" class="meta"></span></div></div>
 <h2>Drafts and posts <button id="run" style="margin-left:8px">Check for new drafts now</button></h2><div id="posts"></div>
@@ -106,7 +109,7 @@ if(r.status===401){showLogin('Wrong password');throw new Error('login needed')}
 const j=await r.json().catch(()=>({error:'HTTP '+r.status}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function load(){const s=await api('/api/admin/state');
-$('#status').innerHTML='<span class="pill">X '+(s.x_ready?'connected':'keys missing')+'</span><span class="pill">agent '+(s.agent?'on':'off')+'</span><span class="pill">autopost '+(s.autopost?'on':'off')+'</span>';
+$('#status').innerHTML='<span class="pill">X keys '+(s.x_ready?'set':'missing')+(s.x_keys&&s.x_keys.api_key_ends_with?' (API key ...'+esc(s.x_keys.api_key_ends_with)+', token for user id '+esc(s.x_keys.access_token_user_id||'?')+')':'')+'</span><span class="pill">agent '+(s.agent?'on':'off')+'</span><span class="pill">autopost '+(s.autopost?'on':'off')+'</span>';
 $('#posts').innerHTML=s.posts.length?'':'<p class="meta">No drafts yet.</p>';
 for(const p of s.posts){const d=document.createElement('div');d.className='card';
 const editable=p.status==='draft'||p.status==='failed';
@@ -124,6 +127,7 @@ const days=Object.keys(s.visits).sort().reverse();const refs=[...new Set(days.fl
 $('#visits').innerHTML=days.length?'<table><tr><th>Day</th>'+refs.map(r=>'<th>'+esc(r)+'</th>').join('')+'<th>Total</th></tr>'+days.map(d=>'<tr><td>'+d+'</td>'+refs.map(r=>'<td>'+(s.visits[d][r]||'')+'</td>').join('')+'<td>'+Object.values(s.visits[d]).reduce((a,b)=>a+b,0)+'</td></tr>').join('')+'</table>':'<p class="meta">No visits counted yet.</p>'}
 let t;$('#new').oninput=()=>{clearTimeout(t);t=setTimeout(async()=>{const c=await api('/api/admin/check',{text:$('#new').value});$('#newinfo').innerHTML=c.length+'/280 '+(c.problems.length?'<span class="err">'+esc(c.problems.join('; '))+'</span>':'')},300)};
 $('#add').onclick=async()=>{try{await api('/api/admin/posts',{text:$('#new').value});$('#new').value='';$('#newinfo').innerHTML='<span class="ok">saved</span>';await load()}catch(e){$('#newinfo').innerHTML='<span class="err">'+esc(e.message)+'</span>'}};
+$('#xcheck').onclick=async()=>{$('#xres').textContent='checking...';try{const c=await api('/api/admin/x-check',{});$('#xres').innerHTML=c.ok?'<span class="ok">OK: these keys post as @'+esc(c.username)+'</span>':'<span class="err">'+esc(c.error)+'</span>'}catch(e){$('#xres').innerHTML='<span class="err">'+esc(e.message)+'</span>'}};
 $('#run').onclick=async()=>{await api('/api/admin/run-agent',{}).catch(e=>alert(e.message));await load()};
 function showLogin(msg){$('#app').style.display='none';$('#logout').style.display='none';$('#login').style.display='';$('#loginmsg').textContent=msg||'';try{sessionStorage.removeItem('adm')}catch(e){}tok=''}
 async function start(){if(!tok)return showLogin('');try{await load();$('#login').style.display='none';$('#app').style.display='';$('#logout').style.display=''}catch(e){if(e.message!=='login needed'){$('#login').style.display='';$('#loginmsg').textContent=e.message}}}

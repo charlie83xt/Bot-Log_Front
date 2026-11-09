@@ -58,3 +58,39 @@ export async function postToX(text: string): Promise<{ id: string }> {
   if (!id) throw new Error('X returned no post id');
   return { id };
 }
+
+/** Non-secret hints so you can tell which keys the running server has (last 4 characters, and the
+ *  X user id that starts every access token). */
+export function xKeyHints() {
+  const key = env('X_API_KEY');
+  const token = env('X_ACCESS_TOKEN');
+  return {
+    api_key_ends_with: key ? key.slice(-4) : null,
+    access_token_user_id: /^\d+-/.test(token) ? token.split('-')[0] : null,
+  };
+}
+
+/** Read-only check: asks X which account these keys post as. Nothing is posted. */
+export async function checkX(): Promise<{ ok: true; username: string; id: string } | { ok: false; error: string }> {
+  if (!xConfigured()) return { ok: false, error: 'X keys not set' };
+  const url = `${env('X_API_BASE') || 'https://api.twitter.com'}/2/users/me`;
+  try {
+    const r = await fetch(url, {
+      headers: {
+        Authorization: oauthHeader('GET', url, {
+          consumerKey: env('X_API_KEY'),
+          consumerSecret: env('X_API_SECRET'),
+          token: env('X_ACCESS_TOKEN'),
+          tokenSecret: env('X_ACCESS_SECRET'),
+        }),
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    const body = await r.text();
+    if (!r.ok) return { ok: false, error: `X ${r.status}: ${body.slice(0, 400)}` };
+    const d = (JSON.parse(body) as { data?: { id?: string; username?: string } }).data;
+    return { ok: true, username: d?.username ?? '?', id: d?.id ?? '?' };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
