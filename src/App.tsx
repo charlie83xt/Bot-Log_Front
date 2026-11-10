@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Heart, Share2 } from 'lucide-react';
 import { useFeed } from './hooks/useFeed';
 import { useJson } from './hooks/useJson';
-import type { MarketSnapshot, ResearchStats, SupportInfo } from './types/feed';
+import type { MarketSnapshot, ResearchStats, Scorecard, SupportInfo } from './types/feed';
+import { ScorecardPanel } from './components/ScorecardPanel';
 import { MarketPanel } from './components/MarketPanel';
 import { FeedList } from './components/FeedList';
 import { StatsPanel } from './components/StatsPanel';
@@ -12,6 +13,7 @@ export default function App() {
   const feed = useFeed();
   const market = useJson<MarketSnapshot>('/api/market', 60_000);
   const stats = useJson<ResearchStats>('/api/stats');
+  const scorecard = useJson<Scorecard>('/api/scorecard', 300_000);
   const support = useJson<SupportInfo>('/api/support');
   const [showSupport, setShowSupport] = useState(false);
   const [showLogo, setShowLogo] = useState(true);
@@ -55,11 +57,12 @@ export default function App() {
       </header>
 
       <main className="mx-auto grid max-w-6xl gap-4 px-4 py-5 lg:grid-cols-5">
-        <div className="space-y-4 lg:col-span-3">
+        <div className="min-w-0 space-y-4 lg:col-span-3">
           <MarketPanel m={market.data} error={market.error} />
+          <ScorecardPanel card={scorecard.data} error={scorecard.error} />
           <FeedList items={feed.items} live={feed.live} delay={feed.delay} error={feed.error} />
         </div>
-        <div className="lg:col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           <StatsPanel stats={stats.data} />
         </div>
       </main>

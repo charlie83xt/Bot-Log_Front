@@ -53,7 +53,13 @@ export async function postToX(text: string): Promise<{ id: string }> {
     signal: AbortSignal.timeout(20000),
   });
   const body = await r.text();
-  if (!r.ok) throw new Error(`X ${r.status}: ${body.slice(0, 300)}`);
+  if (!r.ok) {
+    const level = r.headers.get('x-access-level');
+    const hint = r.status === 403 && level === 'read'
+      ? ' (this access token is read-only: regenerate the Access Token and Secret now that the app has Read and write)'
+      : '';
+    throw new Error(`X ${r.status}: ${body.slice(0, 300)}${hint}`);
+  }
   const id = (JSON.parse(body) as { data?: { id?: string } }).data?.id;
   if (!id) throw new Error('X returned no post id');
   return { id };
@@ -71,7 +77,9 @@ export function xKeyHints() {
 }
 
 /** Read-only check: asks X which account these keys post as. Nothing is posted. */
-export async function checkX(): Promise<{ ok: true; username: string; id: string } | { ok: false; error: string }> {
+export async function checkX(): Promise<
+  { ok: true; username: string; id: string; access_level: string | null } | { ok: false; error: string }
+> {
   if (!xConfigured()) return { ok: false, error: 'X keys not set' };
   const url = `${env('X_API_BASE') || 'https://api.twitter.com'}/2/users/me`;
   try {
@@ -89,7 +97,8 @@ export async function checkX(): Promise<{ ok: true; username: string; id: string
     const body = await r.text();
     if (!r.ok) return { ok: false, error: `X ${r.status}: ${body.slice(0, 400)}` };
     const d = (JSON.parse(body) as { data?: { id?: string; username?: string } }).data;
-    return { ok: true, username: d?.username ?? '?', id: d?.id ?? '?' };
+    // X reports the access token's permission: "read", "read-write" or "read-write-directmessages".
+    return { ok: true, username: d?.username ?? '?', id: d?.id ?? '?', access_level: r.headers.get('x-access-level') };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

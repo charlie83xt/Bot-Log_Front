@@ -47,3 +47,32 @@ export interface SupportInfo {
   paypal_amounts: { label: string; url: string }[];
   crypto: { coin: string; address: string }[];
 }
+
+export interface Night {
+  night: string;
+  decision: 'in' | 'in_test' | 'out';
+  reason: string | null;
+  account: string;
+  entry: number | null;
+  exit: number | null;
+  exit_day: string | null;
+  points: number | null;
+  source: 'fill' | 'prices' | 'pending' | null;
+}
+
+export interface Scorecard {
+  since: string | null;
+  nights_in: number;
+  nights_out: number;
+  completed: number;
+  total_points: number;
+  total_after_costs: number;
+  avg_points: number | null;
+  up_share: number | null;
+  worst_night: number | null;
+  max_drawdown: number;
+  longest_losing_run: number;
+  cost_points: number;
+  curve: { night: string; total: number }[];
+  nights: Night[];
+}
