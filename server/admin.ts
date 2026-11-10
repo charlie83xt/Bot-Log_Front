@@ -4,7 +4,7 @@
 import crypto from 'crypto';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
-import { addManualPost, checkPost, editPost, listPosts, publishPost, rejectPost, runAgentOnce, xLength } from './marketing.ts';
+import { addManualPost, apiPostingOn, checkPost, editPost, listPosts, markPosted, publishPost, rejectPost, runAgentOnce, xLength } from './marketing.ts';
 import { visitTotals } from './visits.ts';
 import { checkX, xConfigured, xKeyHints } from './xclient.ts';
 
@@ -51,7 +51,8 @@ export function mountAdmin(app: express.Express) {
   r.get('/api/admin/state', ...guard, handle(async () => ({
     x_ready: xConfigured(),
     x_keys: xKeyHints(),
-    autopost: process.env.MARKETING_AUTOPOST === '1',
+    autopost: process.env.MARKETING_AUTOPOST === '1' && apiPostingOn(),
+    api_posting: apiPostingOn(),
     agent: process.env.MARKETING_ENABLED === '1',
     posts: await listPosts(40),
     visits: await visitTotals(14),
@@ -59,6 +60,7 @@ export function mountAdmin(app: express.Express) {
   r.post('/api/admin/check', ...guard, handle(async (req) => ({ problems: checkPost(text(req)), length: xLength(text(req)) })));
   r.post('/api/admin/posts', ...guard, handle(async (req) => addManualPost(text(req))));
   r.post('/api/admin/posts/:id/edit', ...guard, handle(async (req) => editPost(id(req), text(req))));
+  r.post('/api/admin/posts/:id/mark-posted', ...guard, handle(async (req) => markPosted(id(req), text(req))));
   r.post('/api/admin/posts/:id/reject', ...guard, handle(async (req) => rejectPost(id(req))));
   r.post('/api/admin/posts/:id/publish', ...guard, handle(async (req) =>
     publishPost(id(req), Boolean((req.body as { alt?: unknown })?.alt))));
@@ -109,17 +111,21 @@ if(r.status===401){showLogin('Wrong password');throw new Error('login needed')}
 const j=await r.json().catch(()=>({error:'HTTP '+r.status}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function load(){const s=await api('/api/admin/state');
-$('#status').innerHTML='<span class="pill">X keys '+(s.x_ready?'set':'missing')+(s.x_keys&&s.x_keys.api_key_ends_with?' (API key ...'+esc(s.x_keys.api_key_ends_with)+', token for user id '+esc(s.x_keys.access_token_user_id||'?')+')':'')+'</span><span class="pill">agent '+(s.agent?'on':'off')+'</span><span class="pill">autopost '+(s.autopost?'on':'off')+'</span>';
+$('#status').innerHTML='<span class="pill">X keys '+(s.x_ready?'set':'missing')+(s.x_keys&&s.x_keys.api_key_ends_with?' (API key ...'+esc(s.x_keys.api_key_ends_with)+', token for user id '+esc(s.x_keys.access_token_user_id||'?')+')':'')+'</span><span class="pill">posting: '+(s.api_posting?'X API (paid)':'Open in X (free)')+'</span><span class="pill">agent '+(s.agent?'on':'off')+'</span><span class="pill">autopost '+(s.autopost?'on':'off')+'</span>';
 $('#posts').innerHTML=s.posts.length?'':'<p class="meta">No drafts yet.</p>';
 for(const p of s.posts){const d=document.createElement('div');d.className='card';
 const editable=p.status==='draft'||p.status==='failed';
 d.innerHTML='<div class="meta"><span class="pill '+p.status+'">'+p.status+'</span><span>'+esc(p.kind)+'</span><span>'+new Date(p.created_at).toLocaleString()+'</span>'+(p.post_id?'<span>post id '+esc(p.post_id)+'</span>':'')+'</div>'+
 (editable?'<textarea>'+esc(p.text)+'</textarea>':'<p style="white-space:pre-wrap">'+esc(p.text)+'</p>')+(p.alt_text&&editable?'<div class="alt"><b>AI wording:</b> '+esc(p.alt_text)+'</div>':'')+
-(p.error?'<div class="err">'+esc(p.error)+'</div>':'')+(editable?'<div class="row"><button class="go" data-a="publish">Post to X</button>'+(p.alt_text?'<button data-a="alt">Post AI wording</button>':'')+'<button data-a="edit">Save edit</button><button data-a="reject">Reject</button><span class="msg"></span></div>':'');
-d.querySelectorAll('button').forEach(b=>b.onclick=async()=>{const msg=d.querySelector('.msg');d.querySelectorAll('button').forEach(x=>x.disabled=true);
-try{const t=d.querySelector('textarea').value;const a=b.dataset.a;
-if(a==='publish'){if(t!==p.text)await api('/api/admin/posts/'+p.id+'/edit',{text:t});if(!confirm('Post this to X now?'))throw new Error('cancelled');await api('/api/admin/posts/'+p.id+'/publish',{})}
-else if(a==='alt'){if(!confirm('Post the AI wording to X now?'))throw new Error('cancelled');await api('/api/admin/posts/'+p.id+'/publish',{alt:true})}
+(p.error?'<div class="err">'+esc(p.error)+'</div>':'')+(editable?'<div class="row"><button class="go" data-a="intent">Open in X (free)</button><button data-a="copy">Copy</button><button data-a="mark">Mark as posted</button>'+(s.api_posting?'<button data-a="publish">Post via API (paid)</button>':'')+(p.alt_text?'<button data-a="usealt">Use AI wording</button>':'')+'<button data-a="edit">Save edit</button><button data-a="reject">Reject</button><span class="msg"></span></div>':'');
+d.querySelectorAll('button').forEach(b=>b.onclick=async()=>{const msg=d.querySelector('.msg');const ta=d.querySelector('textarea');const t=ta.value;const a=b.dataset.a;
+if(a==='intent'){window.open('https://x.com/intent/post?text='+encodeURIComponent(t),'_blank','noopener');msg.className='meta msg';msg.textContent='Posted it on X? Press "Mark as posted".';return}
+if(a==='copy'){try{await navigator.clipboard.writeText(t);msg.className='ok msg';msg.textContent='copied'}catch(e){ta.select();msg.textContent='press Ctrl+C'}return}
+if(a==='usealt'){ta.value=p.alt_text;return}
+d.querySelectorAll('button').forEach(x=>x.disabled=true);
+try{
+if(a==='mark')await api('/api/admin/posts/'+p.id+'/mark-posted',{text:t});
+else if(a==='publish'){if(t!==p.text)await api('/api/admin/posts/'+p.id+'/edit',{text:t});if(!confirm('Post via the X API? X charges for each post.'))throw new Error('cancelled');await api('/api/admin/posts/'+p.id+'/publish',{})}
 else if(a==='edit')await api('/api/admin/posts/'+p.id+'/edit',{text:t});else await api('/api/admin/posts/'+p.id+'/reject',{});await load()}
 catch(e){msg.className='err msg';msg.textContent=e.message;d.querySelectorAll('button').forEach(x=>x.disabled=false)}});
 $('#posts').appendChild(d)}
@@ -127,7 +133,7 @@ const days=Object.keys(s.visits).sort().reverse();const refs=[...new Set(days.fl
 $('#visits').innerHTML=days.length?'<table><tr><th>Day</th>'+refs.map(r=>'<th>'+esc(r)+'</th>').join('')+'<th>Total</th></tr>'+days.map(d=>'<tr><td>'+d+'</td>'+refs.map(r=>'<td>'+(s.visits[d][r]||'')+'</td>').join('')+'<td>'+Object.values(s.visits[d]).reduce((a,b)=>a+b,0)+'</td></tr>').join('')+'</table>':'<p class="meta">No visits counted yet.</p>'}
 let t;$('#new').oninput=()=>{clearTimeout(t);t=setTimeout(async()=>{const c=await api('/api/admin/check',{text:$('#new').value});$('#newinfo').innerHTML=c.length+'/280 '+(c.problems.length?'<span class="err">'+esc(c.problems.join('; '))+'</span>':'')},300)};
 $('#add').onclick=async()=>{try{await api('/api/admin/posts',{text:$('#new').value});$('#new').value='';$('#newinfo').innerHTML='<span class="ok">saved</span>';await load()}catch(e){$('#newinfo').innerHTML='<span class="err">'+esc(e.message)+'</span>'}};
-$('#xcheck').onclick=async()=>{$('#xres').textContent='checking...';try{const c=await api('/api/admin/x-check',{});$('#xres').innerHTML=c.ok?'<span class="ok">OK: these keys post as @'+esc(c.username)+'</span>':'<span class="err">'+esc(c.error)+'</span>'}catch(e){$('#xres').innerHTML='<span class="err">'+esc(e.message)+'</span>'}};
+$('#xcheck').onclick=async()=>{$('#xres').textContent='checking...';try{const c=await api('/api/admin/x-check',{});$('#xres').innerHTML=c.ok?(c.access_level==='read'?'<span class="err">Keys work for @'+esc(c.username)+' but the access token is READ-ONLY: regenerate the Access Token and Secret, then update X_ACCESS_TOKEN and X_ACCESS_SECRET.</span>':'<span class="ok">OK: these keys post as @'+esc(c.username)+(c.access_level?' (token access: '+esc(c.access_level)+')':'')+'</span>'):'<span class="err">'+esc(c.error)+'</span>'}catch(e){$('#xres').innerHTML='<span class="err">'+esc(e.message)+'</span>'}};
 $('#run').onclick=async()=>{await api('/api/admin/run-agent',{}).catch(e=>alert(e.message));await load()};
 function showLogin(msg){$('#app').style.display='none';$('#logout').style.display='none';$('#login').style.display='';$('#loginmsg').textContent=msg||'';try{sessionStorage.removeItem('adm')}catch(e){}tok=''}
 async function start(){if(!tok)return showLogin('');try{await load();$('#login').style.display='none';$('#app').style.display='';$('#logout').style.display=''}catch(e){if(e.message!=='login needed'){$('#login').style.display='';$('#loginmsg').textContent=e.message}}}

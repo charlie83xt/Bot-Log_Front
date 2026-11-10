@@ -3,6 +3,7 @@
 //   GET  /api/feed     public events (each one appears PUBLIC_DELAY_MIN minutes after it arrives)
 //   GET  /api/stream   the same events, pushed live (Server-Sent Events)
 //   GET  /api/market   delayed market snapshot from ES-Collector's Supabase bars
+//   GET  /api/scorecard  overnight-rule results night by night
 //   GET  /api/stats    fixed research facts (content/research_stats.json)
 //   GET  /api/support  donation details from settings
 //   GET  /rss.xml      public events as an RSS feed
@@ -18,6 +19,7 @@ import { validateEvent } from './server/events.ts';
 import { narrate } from './server/narrate.ts';
 import { eventExists, insertEvent, latestPublic, storageKind, type FeedRow } from './server/store.ts';
 import { getSnapshot, marketConfigured } from './server/market.ts';
+import { getScorecard } from './server/scorecard.ts';
 import { siteUrl, supportInfo } from './server/site.ts';
 import { keyCanWrite, keyKind, sbGet } from './server/supabase.ts';
 import { countVisit } from './server/visits.ts';
@@ -230,6 +232,18 @@ app.get('/api/market', rateLimit(60), async (_req, res) => {
   } catch (err) {
     console.error('market read failed:', (err as Error).message);
     res.status(502).json({ error: 'market data unavailable' });
+  }
+});
+
+app.get('/api/scorecard', rateLimit(60), async (_req, res) => {
+  try {
+    const card = await getScorecard();
+    if (!card) return void res.status(503).json({ error: 'scorecard not available' });
+    res.setHeader('Cache-Control', 'public, max-age=120');
+    res.json(card);
+  } catch (err) {
+    console.error('scorecard failed:', (err as Error).message);
+    res.status(502).json({ error: 'scorecard unavailable' });
   }
 });
 

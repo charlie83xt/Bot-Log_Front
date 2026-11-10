@@ -11,11 +11,12 @@ import { latestPublic, type FeedRow } from './store.ts';
 import { numbersIn, publicTextProblems } from './narrate.ts';
 import { postToX, xConfigured } from './xclient.ts';
 import { siteUrl } from './site.ts';
+import { getScorecard, type Scorecard } from './scorecard.ts';
 
 export interface Post {
   id: number;
   key: string;
-  kind: 'recap' | 'overnight' | 'fact' | 'manual';
+  kind: 'recap' | 'overnight' | 'fact' | 'scorecard' | 'manual';
   text: string;
   alt_text: string | null;
   status: 'draft' | 'posted' | 'rejected' | 'failed';
@@ -70,9 +71,22 @@ async function updatePost(id: number, patch: Partial<Post>): Promise<Post | null
 }
 
 // ---------- text helpers ----------
-/** Length as X counts it: every link counts as 23 characters. */
+// X's own counting (twitter-text v3): links count 23; most Latin, Greek, Cyrillic, Hebrew, Arabic letters and
+// common punctuation count 1; everything else - emoji, arrows such as "→", CJK - counts 2. Limit is 280.
+const LIGHT: [number, number][] = [[0, 4351], [8192, 8205], [8208, 8223], [8242, 8247]];
+const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+
 export function xLength(text: string): number {
-  return [...text.replace(/https?:\/\/\S+/g, 'x'.repeat(23))].length;
+  let n = 0;
+  for (const { segment } of segmenter.segment(text.normalize('NFC').replace(/https?:\/\/\S+/g, '\u0001'))) {
+    if (segment === '\u0001') { n += 23; continue; }
+    if (/\p{Extended_Pictographic}/u.test(segment)) { n += 2; continue; } // a whole emoji, even multi-part
+    for (const ch of segment) {
+      const cp = ch.codePointAt(0)!;
+      n += LIGHT.some(([a, b]) => cp >= a && cp <= b) ? 1 : 2;
+    }
+  }
+  return n;
 }
 
 export function checkPost(text: string): string[] {
@@ -161,6 +175,22 @@ export function factText(week: number): string | null {
   }
 }
 
+/** Weekly results of the overnight rule, for nights completed in the last 7 days. */
+export function scorecardText(card: Scorecard, sinceDay: string): string | null {
+  const week = card.nights.filter((n) => n.night >= sinceDay && n.decision !== 'out' && n.points !== null);
+  const out = card.nights.filter((n) => n.night >= sinceDay && n.decision === 'out').length;
+  if (!week.length && !out) return null;
+  const pts = week.reduce((a, n) => a + n.points!, 0);
+  const head =
+    `Overnight rule, live test, this week: ${week.length} night${week.length === 1 ? '' : 's'} held` +
+    (out ? `, ${out} out` : '') + (week.length ? `, ${sgn(pts)} points before costs.` : '.');
+  const total =
+    `Since ${dayLabel(card.since!)}: ${card.completed} nights, ${sgn(card.total_after_costs)} points after costs` +
+    (card.up_share != null ? `, up on ${Math.round(card.up_share * 100)}% of nights.` : '.');
+  const l = link();
+  return fit(head, [total, 'Wins and losses both get posted.'], l ? `Night by night: ${l}` : '');
+}
+
 // ---------- optional AI rewording, checked like the narration ----------
 let ai: GoogleGenAI | null = null;
 async function altWording(text: string): Promise<string | null> {
@@ -201,7 +231,20 @@ async function postedToday(): Promise<number> {
   return posts.filter((p) => p.status === 'posted' && p.posted_at && etParts(Date.parse(p.posted_at)).day === today).length;
 }
 
+/** Posting through the X API is billed per post, so it is off unless X_POST_MODE=api. */
+export const apiPostingOn = () => env('X_POST_MODE') === 'api' && xConfigured();
+
+/** You posted it yourself (free, via the "Open in X" button): record it as posted. */
+export async function markPosted(id: number, text: string): Promise<Post> {
+  const p = await getPost(id);
+  if (!p || p.status === 'posted' || p.status === 'rejected') throw new Error('cannot mark this post');
+  const problems = checkPost(text);
+  if (problems.length) throw new Error(problems.join('; '));
+  return (await updatePost(id, { status: 'posted', text, post_id: 'manual', posted_at: new Date().toISOString(), error: null }))!;
+}
+
 export async function publishPost(id: number, useAlt = false): Promise<Post> {
+  if (!apiPostingOn()) throw new Error('API posting is off (X charges per post). Use "Open in X", or set X_POST_MODE=api.');
   const p = await getPost(id);
   if (!p) throw new Error('no such post');
   if (p.status === 'posted') throw new Error('already posted');
@@ -245,7 +288,7 @@ async function draft(key: string, kind: Post['kind'], text: string | null) {
   if (checkPost(text).length) return; // never store a draft that could not be posted
   const created = await addPost({ key, kind, text, alt_text: await altWording(text) });
   console.log(`marketing: new ${kind} draft ${created.id}`);
-  if (env('MARKETING_AUTOPOST') === '1' && xConfigured()) {
+  if (env('MARKETING_AUTOPOST') === '1' && apiPostingOn()) {
     try {
       await publishPost(created.id);
       console.log(`marketing: auto-posted ${created.id}`);
@@ -280,6 +323,11 @@ export async function runAgentOnce(nowMs = Date.now()) {
       await draft(`recap:${et.day}`, 'recap', recapText(m, on));
     }
   }
+  if (et.weekday === 'Sat' && et.minutes >= 11 * 60) {
+    const card = await getScorecard().catch(() => null);
+    const monday = new Date(Date.parse(`${et.day}T12:00:00Z`) - 5 * 86400_000).toISOString().slice(0, 10);
+    if (card?.since) await draft(`scorecard:${et.day}`, 'scorecard', scorecardText(card, monday));
+  }
   if (et.weekday === 'Sun' && et.minutes >= 11 * 60) {
     const w = isoWeek(nowMs);
     await draft(`fact:${et.day.slice(0, 4)}-w${w}`, 'fact', factText(w));
@@ -291,5 +339,5 @@ export function startAgent() {
   const tick = () => runAgentOnce().catch((err) => console.warn('marketing agent:', (err as Error).message));
   setInterval(tick, 5 * 60_000).unref();
   setTimeout(tick, 20_000).unref();
-  console.log(`marketing agent on (autopost ${env('MARKETING_AUTOPOST') === '1' ? 'on' : 'off'}, X ${xConfigured() ? 'ready' : 'keys missing'})`);
+  console.log(`marketing agent on (posting: ${apiPostingOn() ? 'X API' : 'manual, free'}, autopost ${env('MARKETING_AUTOPOST') === '1' && apiPostingOn() ? 'on' : 'off'})`);
 }
